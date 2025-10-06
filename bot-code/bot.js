@@ -7,12 +7,23 @@ if (typeof globalThis.ReadableStream === 'undefined') {
 }
 
 const { Client, GatewayIntentBits, Collection, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const { createClient } = require('@supabase/supabase-js');
+const { supabase } = require('./supabaseClient');
 const fs = require('fs');
 const path = require('path');
 
-// Initialize Supabase
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+// Random questions for channel monitoring
+const randomQuestions = [
+  "What's a small decision that changed your life?",
+  "If you could teleport anywhere right now, where would you go?",
+  "What's your dream meal if calories didn't exist?",
+  "What's one hobby you could talk about for hours?",
+  "Would you rather explore space or the deep sea?",
+  "What's your go-to comfort movie?",
+  "If you could meet your future self for one minute, what would you ask?",
+  "What's one thing that instantly improves your day?",
+  "If you could have any superpower for a day, what would it be?",
+  "What's the weirdest food combination you secretly love?"
+];
 
 // Initialize Discord Client
 const client = new Client({
@@ -75,10 +86,14 @@ client.once('ready', async () => {
     });
   } else {
     client.user.setPresence({
-      activities: [{ name: '/help', type: 0 }],
+      activities: [{ name: '/help • Watching chat activity 👀', type: 0 }],
       status: 'online'
     });
   }
+  
+  // Start channel monitoring interval (check every minute)
+  setInterval(() => checkMonitoredChannels(client), 60000);
+  console.log('🔄 Channel monitoring system started');
 });
 
 // ==================== MESSAGE HANDLER ====================
@@ -100,6 +115,9 @@ client.on('messageCreate', async (message) => {
   
   // Check blacklist
   await checkBlacklist(message);
+  
+  // Update monitored channel activity
+  await updateChannelActivity(message.channel.id, message.guild.id);
 });
 
 async function handleAFK(message) {
@@ -420,6 +438,82 @@ async function handleAntiSpam(message) {
     } catch (error) {
       console.error('Error handling spam:', error);
     }
+  }
+}
+
+// ==================== CHANNEL MONITORING SYSTEM ====================
+
+// Update monitored channel activity
+async function updateChannelActivity(channelId, guildId) {
+  try {
+    const { error } = await supabase
+      .from('monitored_channels')
+      .update({ last_active: new Date().toISOString() })
+      .eq('guild_id', guildId)
+      .eq('channel_id', channelId)
+      .eq('active', true);
+
+    if (!error) {
+      console.log(`🔁 Activity detected in channel ${channelId} — timer reset.`);
+    }
+  } catch (error) {
+    console.error('Error updating channel activity:', error);
+  }
+}
+
+// Check monitored channels for inactivity
+async function checkMonitoredChannels(client) {
+  try {
+    const { data: channels, error } = await supabase
+      .from('monitored_channels')
+      .select('*')
+      .eq('active', true);
+
+    if (error || !channels) return;
+
+    for (const channel of channels) {
+      // Get inactivity timeout for this guild
+      const { data: settings } = await supabase
+        .from('inactivity_settings')
+        .select('timeout_minutes')
+        .eq('guild_id', channel.guild_id)
+        .maybeSingle();
+
+      const timeoutMinutes = settings?.timeout_minutes || 15;
+      const lastActive = new Date(channel.last_active);
+      const now = new Date();
+      const diffMinutes = Math.floor((now - lastActive) / 60000);
+
+      if (diffMinutes >= timeoutMinutes) {
+        // Send random question
+        const guild = client.guilds.cache.get(channel.guild_id);
+        if (!guild) continue;
+
+        const textChannel = guild.channels.cache.get(channel.channel_id);
+        if (!textChannel) continue;
+
+        const question = randomQuestions[Math.floor(Math.random() * randomQuestions.length)];
+
+        const embed = new EmbedBuilder()
+          .setTitle('🖤 Conversation Breaker')
+          .setDescription(`It's been quiet for a while... 👀\n\n**Question:** ${question}\n\n💬 Reply to restart the timer!`)
+          .setColor('#111111')
+          .setFooter({ text: 'Auron Chat Monitor • Keeping the vibes alive' })
+          .setTimestamp();
+
+        await textChannel.send({ embeds: [embed] });
+
+        // Update last_active to prevent spam
+        await supabase
+          .from('monitored_channels')
+          .update({ last_active: new Date().toISOString() })
+          .eq('id', channel.id);
+
+        console.log(`💬 Sent conversation breaker in #${textChannel.name} (${guild.name})`);
+      }
+    }
+  } catch (error) {
+    console.error('Error checking monitored channels:', error);
   }
 }
 

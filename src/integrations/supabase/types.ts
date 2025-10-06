@@ -125,6 +125,21 @@ export type Database = {
         }
         Relationships: []
       }
+      inactivity_settings: {
+        Row: {
+          guild_id: string
+          timeout_minutes: number
+        }
+        Insert: {
+          guild_id: string
+          timeout_minutes?: number
+        }
+        Update: {
+          guild_id?: string
+          timeout_minutes?: number
+        }
+        Relationships: []
+      }
       message_tracking: {
         Row: {
           guild_id: string
@@ -182,6 +197,30 @@ export type Database = {
           reason?: string
           severity?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      monitored_channels: {
+        Row: {
+          active: boolean
+          channel_id: string
+          guild_id: string
+          id: string
+          last_active: string
+        }
+        Insert: {
+          active?: boolean
+          channel_id: string
+          guild_id: string
+          id?: string
+          last_active?: string
+        }
+        Update: {
+          active?: boolean
+          channel_id?: string
+          guild_id?: string
+          id?: string
+          last_active?: string
         }
         Relationships: []
       }

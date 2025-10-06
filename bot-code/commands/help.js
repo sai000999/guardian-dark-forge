@@ -37,13 +37,18 @@ module.exports = {
           inline: false 
         },
         { 
+          name: '🧠 Channel Monitor System (Admin)', 
+          value: '`/monitor <channel>` - Start monitoring for inactivity\n`/monitor-stop <channel>` - Stop monitoring a channel\n`/monitor-list` - List all monitored channels\n`/inactivity-timer set <minutes>` - Set inactivity timeout (5-120 min)', 
+          inline: false 
+        },
+        { 
           name: '📊 Leveling & Utility', 
           value: '`/level [user]` - Check user level and XP\n`/afk [reason]` - Set AFK status', 
           inline: false 
         },
         { 
           name: '🤖 AI Features', 
-          value: '• **Anti-Spam AutoMod** - Auto-detects spam (5+ msgs/10s)\n• Automatically times out spammers for 10 minutes', 
+          value: '• **Anti-Spam AutoMod** - Auto-detects spam (5+ msgs/10s)\n• **Smart Channel Monitor** - Sends engaging questions when channels are quiet\n• Automatically times out spammers for 10 minutes', 
           inline: false 
         }
       )
