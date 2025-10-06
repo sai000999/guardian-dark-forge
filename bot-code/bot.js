@@ -1,4 +1,11 @@
 require('dotenv').config();
+
+// Polyfill for ReadableStream (Node.js < 18 compatibility)
+if (typeof globalThis.ReadableStream === 'undefined') {
+  const { ReadableStream } = require('web-streams-polyfill');
+  globalThis.ReadableStream = ReadableStream;
+}
+
 const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
