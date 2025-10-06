@@ -6,7 +6,7 @@ if (typeof globalThis.ReadableStream === 'undefined') {
   globalThis.ReadableStream = ReadableStream;
 }
 
-const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +21,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates,
   ],
 });
 
@@ -90,6 +91,12 @@ client.on('messageCreate', async (message) => {
   
   // XP System
   await handleXP(message);
+  
+  // Economy - Message coins
+  await handleMessageCoins(message);
+  
+  // Anti-Spam AutoMod
+  await handleAntiSpam(message);
   
   // Check blacklist
   await checkBlacklist(message);
@@ -226,31 +233,591 @@ async function checkBlacklist(message) {
   }
 }
 
-// ==================== SLASH COMMAND HANDLER ====================
+// ==================== VOICE STATE HANDLER ====================
 
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isCommand()) return;
-
-  const command = client.commands.get(interaction.commandName);
-
-  if (!command) {
-    console.error(`No command matching ${interaction.commandName} was found.`);
-    return;
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  const supabase = client.supabase;
+  const guildId = newState.guild.id;
+  const userId = newState.member.id;
+  
+  // User joined a voice channel
+  if (!oldState.channelId && newState.channelId) {
+    await supabase.from('voice_sessions').insert({
+      guild_id: guildId,
+      user_id: userId,
+      channel_id: newState.channelId,
+      join_time: new Date().toISOString(),
+    });
   }
-
-  try {
-    await command.execute(interaction, client);
-  } catch (error) {
-    console.error(error);
-    const errorMessage = { content: '❌ There was an error executing this command!', ephemeral: true };
+  
+  // User left a voice channel
+  if (oldState.channelId && !newState.channelId) {
+    const { data: session } = await supabase
+      .from('voice_sessions')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .eq('channel_id', oldState.channelId)
+      .is('leave_time', null)
+      .order('join_time', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(errorMessage);
-    } else {
-      await interaction.reply(errorMessage);
+    if (session) {
+      const joinTime = new Date(session.join_time);
+      const leaveTime = new Date();
+      const durationMinutes = Math.floor((leaveTime - joinTime) / 1000 / 60);
+      
+      await supabase
+        .from('voice_sessions')
+        .update({
+          leave_time: leaveTime.toISOString(),
+          duration_minutes: durationMinutes,
+        })
+        .eq('id', session.id);
+      
+      // Award coins (100 coins per 10 minutes)
+      const coinsEarned = Math.floor(durationMinutes / 10) * 100;
+      if (coinsEarned > 0) {
+        const { data: balance } = await supabase
+          .from('user_balances')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        
+        const newBalance = (balance?.balance || 0) + coinsEarned;
+        
+        await supabase.from('user_balances').upsert({
+          guild_id: guildId,
+          user_id: userId,
+          balance: newBalance,
+        });
+        
+        await supabase.from('economy_transactions').insert({
+          guild_id: guildId,
+          user_id: userId,
+          amount: coinsEarned,
+          transaction_type: 'earn',
+          description: `Voice activity reward (${durationMinutes} minutes)`,
+          balance_after: newBalance,
+        });
+      }
     }
   }
 });
+
+// ==================== MESSAGE COINS HANDLER ====================
+
+let messageCounters = new Map(); // userId -> { count, lastReset }
+
+async function handleMessageCoins(message) {
+  const userId = message.author.id;
+  const guildId = message.guild.id;
+  
+  if (!messageCounters.has(userId)) {
+    messageCounters.set(userId, { count: 0, lastReset: Date.now() });
+  }
+  
+  const counter = messageCounters.get(userId);
+  counter.count++;
+  
+  // Reset counter every 10 messages
+  if (counter.count >= 10) {
+    const { data: balance } = await supabase
+      .from('user_balances')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    const newBalance = (balance?.balance || 0) + 5;
+    
+    await supabase.from('user_balances').upsert({
+      guild_id: guildId,
+      user_id: userId,
+      balance: newBalance,
+    });
+    
+    await supabase.from('economy_transactions').insert({
+      guild_id: guildId,
+      user_id: userId,
+      amount: 5,
+      transaction_type: 'earn',
+      description: 'Message activity reward (10 messages)',
+      balance_after: newBalance,
+    });
+    
+    counter.count = 0;
+  }
+}
+
+// ==================== ANTI-SPAM AUTOMOD ====================
+
+let spamTracking = new Map(); // userId -> [timestamps]
+
+async function handleAntiSpam(message) {
+  const userId = message.author.id;
+  const guildId = message.guild.id;
+  const now = Date.now();
+  
+  if (!spamTracking.has(userId)) {
+    spamTracking.set(userId, []);
+  }
+  
+  const timestamps = spamTracking.get(userId);
+  
+  // Remove timestamps older than 10 seconds
+  const recentTimestamps = timestamps.filter(t => now - t < 10000);
+  recentTimestamps.push(now);
+  spamTracking.set(userId, recentTimestamps);
+  
+  // Check if user sent more than 5 messages in 10 seconds
+  if (recentTimestamps.length > 5) {
+    try {
+      // Delete recent spam messages
+      const recentMessages = await message.channel.messages.fetch({ limit: 10 });
+      const userMessages = recentMessages.filter(m => m.author.id === userId);
+      await message.channel.bulkDelete(userMessages).catch(console.error);
+      
+      // Timeout user for 10 minutes
+      await message.member.timeout(10 * 60 * 1000, 'Excessive spamming detected');
+      
+      // Log to database
+      await supabase.from('moderation_logs').insert({
+        guild_id: guildId,
+        user_id: userId,
+        moderator_id: client.user.id,
+        action_type: 'timeout',
+        reason: 'Auto-mod: Excessive spamming detected',
+        severity: 'moderate',
+        duration_minutes: 10,
+      });
+      
+      // Send log embed
+      const { data: config } = await supabase
+        .from('bot_config')
+        .select('mod_log_channel_id')
+        .eq('guild_id', guildId)
+        .maybeSingle();
+      
+      if (config?.mod_log_channel_id) {
+        const logChannel = message.guild.channels.cache.get(config.mod_log_channel_id);
+        if (logChannel) {
+          const logEmbed = new EmbedBuilder()
+            .setColor(0xDC2626)
+            .setTitle('🚫 Anti-Spam Triggered')
+            .setDescription(`**User:** <@${userId}>\n**Reason:** Excessive spamming detected\n**Action:** Timed out for 10 minutes`)
+            .setTimestamp();
+          
+          await logChannel.send({ embeds: [logEmbed] });
+        }
+      }
+      
+      // Clear spam tracking for this user
+      spamTracking.delete(userId);
+      
+    } catch (error) {
+      console.error('Error handling spam:', error);
+    }
+  }
+}
+
+// ==================== BUTTON & INTERACTION HANDLER ====================
+
+client.on('interactionCreate', async (interaction) => {
+  const supabase = client.supabase;
+  
+  // Handle slash commands
+  if (interaction.isCommand()) {
+    const command = client.commands.get(interaction.commandName);
+
+    if (!command) {
+      console.error(`No command matching ${interaction.commandName} was found.`);
+      return;
+    }
+
+    try {
+      await command.execute(interaction, client);
+    } catch (error) {
+      console.error(error);
+      const errorMessage = { content: '❌ There was an error executing this command!', ephemeral: true };
+      
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(errorMessage);
+      } else {
+        await interaction.reply(errorMessage);
+      }
+    }
+    return;
+  }
+  
+  // Handle button clicks
+  if (interaction.isButton()) {
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+    
+    // Ticket Panel - Create Ticket
+    if (interaction.customId === 'create_ticket') {
+      // Check if user already has an open ticket
+      const { data: existingTicket } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('guild_id', guildId)
+        .eq('user_id', userId)
+        .eq('status', 'open')
+        .maybeSingle();
+      
+      if (existingTicket) {
+        return interaction.reply({ 
+          content: '❌ You already have an open ticket!', 
+          ephemeral: true 
+        });
+      }
+      
+      await interaction.deferReply({ ephemeral: true });
+      
+      try {
+        // Get ticket config
+        const { data: config } = await supabase
+          .from('ticket_config')
+          .select('*')
+          .eq('guild_id', guildId)
+          .maybeSingle();
+        
+        if (!config) {
+          return interaction.editReply({ 
+            content: '❌ Ticket system not configured!', 
+          });
+        }
+        
+        const ticketChannel = interaction.guild.channels.cache.get(config.ticket_channel_id);
+        if (!ticketChannel) {
+          return interaction.editReply({ 
+            content: '❌ Ticket channel not found!', 
+          });
+        }
+        
+        // Create thread
+        const thread = await ticketChannel.threads.create({
+          name: `ticket-${interaction.user.username}`,
+          type: ChannelType.PrivateThread,
+          reason: 'Support ticket created',
+        });
+        
+        // Add user and staff to thread
+        await thread.members.add(userId);
+        const staffRole = interaction.guild.roles.cache.get(config.staff_role_id);
+        
+        // Save to database
+        await supabase.from('tickets').insert({
+          guild_id: guildId,
+          user_id: userId,
+          channel_id: ticketChannel.id,
+          thread_id: thread.id,
+          status: 'open',
+          subject: 'Support Request',
+        });
+        
+        // Send welcome message
+        const welcomeEmbed = new EmbedBuilder()
+          .setColor(0xDC2626)
+          .setTitle('🎟️ Support Ticket')
+          .setDescription(`Our support team ${staffRole} will be here soon. Please describe your issue below.`)
+          .setFooter({ text: 'Auron Support System' })
+          .setTimestamp();
+        
+        const controlButtons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('claim_ticket')
+              .setLabel('Claim Ticket')
+              .setEmoji('🧍‍♂️')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId('close_ticket')
+              .setLabel('Close Ticket')
+              .setEmoji('🚪')
+              .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId('add_member')
+              .setLabel('Add Member')
+              .setEmoji('➕')
+              .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+              .setCustomId('remove_member')
+              .setLabel('Remove Member')
+              .setEmoji('➖')
+              .setStyle(ButtonStyle.Secondary)
+          );
+        
+        await thread.send({ content: `${staffRole}`, embeds: [welcomeEmbed], components: [controlButtons] });
+        
+        await interaction.editReply({ 
+          content: `✅ Ticket created! ${thread}`, 
+        });
+        
+      } catch (error) {
+        console.error('Error creating ticket:', error);
+        await interaction.editReply({ 
+          content: '❌ Failed to create ticket.', 
+        });
+      }
+    }
+    
+    // Support Info
+    if (interaction.customId === 'support_info') {
+      const infoEmbed = new EmbedBuilder()
+        .setColor(0xDC2626)
+        .setTitle('🧾 Support Information')
+        .setDescription('**How to get support:**\n\n1. Click 🎫 Create Ticket\n2. A private thread will be created\n3. Describe your issue\n4. Staff will assist you\n5. Your ticket will be closed when resolved')
+        .setFooter({ text: 'Auron Support System' });
+      
+      await interaction.reply({ embeds: [infoEmbed], ephemeral: true });
+    }
+    
+    // Claim Ticket
+    if (interaction.customId === 'claim_ticket') {
+      const { data: ticket } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('thread_id', interaction.channel.id)
+        .maybeSingle();
+      
+      if (!ticket) {
+        return interaction.reply({ content: '❌ Ticket not found!', ephemeral: true });
+      }
+      
+      if (ticket.claimed_by) {
+        return interaction.reply({ content: '❌ Ticket already claimed!', ephemeral: true });
+      }
+      
+      await supabase
+        .from('tickets')
+        .update({ 
+          claimed_by: userId,
+          claimed_at: new Date().toISOString(),
+        })
+        .eq('id', ticket.id);
+      
+      const claimEmbed = new EmbedBuilder()
+        .setColor(0x00FF00)
+        .setTitle('✅ Ticket Claimed')
+        .setDescription(`This ticket has been claimed by <@${userId}>`)
+        .setTimestamp();
+      
+      await interaction.reply({ embeds: [claimEmbed] });
+    }
+    
+    // Close Ticket
+    if (interaction.customId === 'close_ticket') {
+      const { data: ticket } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('thread_id', interaction.channel.id)
+        .maybeSingle();
+      
+      if (!ticket) {
+        return interaction.reply({ content: '❌ Ticket not found!', ephemeral: true });
+      }
+      
+      await supabase
+        .from('tickets')
+        .update({ 
+          status: 'closed',
+          closed_at: new Date().toISOString(),
+          closed_by: userId,
+        })
+        .eq('id', ticket.id);
+      
+      const closeEmbed = new EmbedBuilder()
+        .setColor(0xDC2626)
+        .setTitle('🎫 Ticket Closed')
+        .setDescription('This ticket has been closed. Thread will be archived.')
+        .setTimestamp();
+      
+      await interaction.reply({ embeds: [closeEmbed] });
+      
+      setTimeout(async () => {
+        await interaction.channel.setArchived(true);
+      }, 3000);
+    }
+    
+    // Add Member Modal
+    if (interaction.customId === 'add_member') {
+      const modal = new ModalBuilder()
+        .setCustomId('add_member_modal')
+        .setTitle('Add Member to Ticket');
+      
+      const userInput = new TextInputBuilder()
+        .setCustomId('user_input')
+        .setLabel('User ID or Mention')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+      
+      modal.addComponents(new ActionRowBuilder().addComponents(userInput));
+      await interaction.showModal(modal);
+    }
+    
+    // Remove Member Modal
+    if (interaction.customId === 'remove_member') {
+      const modal = new ModalBuilder()
+        .setCustomId('remove_member_modal')
+        .setTitle('Remove Member from Ticket');
+      
+      const userInput = new TextInputBuilder()
+        .setCustomId('user_input')
+        .setLabel('User ID or Mention')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+      
+      modal.addComponents(new ActionRowBuilder().addComponents(userInput));
+      await interaction.showModal(modal);
+    }
+    
+    // Shop - Buy VIP
+    if (interaction.customId === 'buy_vip') {
+      await handleShopPurchase(interaction, 'vip', 5000);
+    }
+    
+    // Shop - Buy VC Access
+    if (interaction.customId === 'buy_vcaccess') {
+      await handleShopPurchase(interaction, 'vcaccess', 8000);
+    }
+    
+    // Shop - Buy Hex Role
+    if (interaction.customId === 'buy_hexrole') {
+      await handleShopPurchase(interaction, 'hexrole', 2000);
+    }
+  }
+  
+  // Handle modals
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId === 'add_member_modal') {
+      const userInput = interaction.fields.getTextInputValue('user_input');
+      const userId = userInput.replace(/[<@!>]/g, '');
+      
+      try {
+        await interaction.channel.members.add(userId);
+        await interaction.reply({ content: `✅ Added <@${userId}> to ticket`, ephemeral: true });
+      } catch (error) {
+        await interaction.reply({ content: '❌ Failed to add member', ephemeral: true });
+      }
+    }
+    
+    if (interaction.customId === 'remove_member_modal') {
+      const userInput = interaction.fields.getTextInputValue('user_input');
+      const userId = userInput.replace(/[<@!>]/g, '');
+      
+      try {
+        await interaction.channel.members.remove(userId);
+        await interaction.reply({ content: `✅ Removed <@${userId}> from ticket`, ephemeral: true });
+      } catch (error) {
+        await interaction.reply({ content: '❌ Failed to remove member', ephemeral: true });
+      }
+    }
+  }
+});
+
+// ==================== SHOP PURCHASE HANDLER ====================
+
+async function handleShopPurchase(interaction, itemType, price) {
+  const supabase = client.supabase;
+  const guildId = interaction.guild.id;
+  const userId = interaction.user.id;
+  
+  await interaction.deferReply({ ephemeral: true });
+  
+  try {
+    // Check balance
+    const { data: balance } = await supabase
+      .from('user_balances')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    if (!balance || balance.balance < price) {
+      return interaction.editReply({ 
+        content: `❌ Insufficient funds! You need **${price}** coins but have **${balance?.balance || 0}** coins.`, 
+      });
+    }
+    
+    // Get shop config
+    const { data: shopConfig } = await supabase
+      .from('shop_config')
+      .select('*')
+      .eq('guild_id', guildId)
+      .maybeSingle();
+    
+    let roleId;
+    let itemName;
+    
+    if (itemType === 'vip') {
+      roleId = shopConfig?.vip_role_id;
+      itemName = 'VIP Role';
+    } else if (itemType === 'vcaccess') {
+      roleId = shopConfig?.vcaccess_role_id;
+      itemName = 'Private VC Access';
+    } else if (itemType === 'hexrole') {
+      roleId = shopConfig?.hexrole_role_id;
+      itemName = 'Role Colors Access';
+    }
+    
+    if (!roleId) {
+      return interaction.editReply({ 
+        content: '❌ This item is not configured yet!', 
+      });
+    }
+    
+    const role = interaction.guild.roles.cache.get(roleId);
+    if (!role) {
+      return interaction.editReply({ 
+        content: '❌ Role not found!', 
+      });
+    }
+    
+    // Check if user already has role
+    if (interaction.member.roles.cache.has(roleId)) {
+      return interaction.editReply({ 
+        content: '❌ You already have this item!', 
+      });
+    }
+    
+    // Deduct coins
+    const newBalance = balance.balance - price;
+    
+    await supabase.from('user_balances').update({
+      balance: newBalance,
+    }).eq('guild_id', guildId).eq('user_id', userId);
+    
+    await supabase.from('economy_transactions').insert({
+      guild_id: guildId,
+      user_id: userId,
+      amount: -price,
+      transaction_type: 'spend',
+      description: `Purchased ${itemName}`,
+      balance_after: newBalance,
+    });
+    
+    // Assign role
+    await interaction.member.roles.add(role);
+    
+    const successEmbed = new EmbedBuilder()
+      .setColor(0x00FF00)
+      .setTitle('✅ Purchase Successful')
+      .setDescription(`You purchased **${itemName}**!\n\n**Cost:** ${price} coins\n**Remaining Balance:** ${newBalance} coins`)
+      .setTimestamp();
+    
+    await interaction.editReply({ embeds: [successEmbed] });
+    
+  } catch (error) {
+    console.error('Error processing purchase:', error);
+    await interaction.editReply({ 
+      content: '❌ Failed to process purchase.', 
+    });
+  }
+}
 
 // Login
 client.login(process.env.DISCORD_TOKEN);

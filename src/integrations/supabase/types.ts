@@ -125,6 +125,30 @@ export type Database = {
         }
         Relationships: []
       }
+      message_tracking: {
+        Row: {
+          guild_id: string
+          id: string
+          message_id: string
+          sent_at: string | null
+          user_id: string
+        }
+        Insert: {
+          guild_id: string
+          id?: string
+          message_id: string
+          sent_at?: string | null
+          user_id: string
+        }
+        Update: {
+          guild_id?: string
+          id?: string
+          message_id?: string
+          sent_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       moderation_logs: {
         Row: {
           action_type: string
@@ -197,9 +221,62 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_config: {
+        Row: {
+          created_at: string | null
+          guild_id: string
+          hexrole_role_id: string | null
+          id: string
+          vcaccess_role_id: string | null
+          vip_role_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          guild_id: string
+          hexrole_role_id?: string | null
+          id?: string
+          vcaccess_role_id?: string | null
+          vip_role_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          guild_id?: string
+          hexrole_role_id?: string | null
+          id?: string
+          vcaccess_role_id?: string | null
+          vip_role_id?: string | null
+        }
+        Relationships: []
+      }
+      ticket_config: {
+        Row: {
+          created_at: string | null
+          guild_id: string
+          id: string
+          staff_role_id: string
+          ticket_channel_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          guild_id: string
+          id?: string
+          staff_role_id: string
+          ticket_channel_id: string
+        }
+        Update: {
+          created_at?: string | null
+          guild_id?: string
+          id?: string
+          staff_role_id?: string
+          ticket_channel_id?: string
+        }
+        Relationships: []
+      }
       tickets: {
         Row: {
           channel_id: string
+          claimed_at: string | null
+          claimed_by: string | null
           closed_at: string | null
           closed_by: string | null
           created_at: string | null
@@ -207,10 +284,13 @@ export type Database = {
           id: string
           status: string
           subject: string | null
+          thread_id: string | null
           user_id: string
         }
         Insert: {
           channel_id: string
+          claimed_at?: string | null
+          claimed_by?: string | null
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string | null
@@ -218,10 +298,13 @@ export type Database = {
           id?: string
           status?: string
           subject?: string | null
+          thread_id?: string | null
           user_id: string
         }
         Update: {
           channel_id?: string
+          claimed_at?: string | null
+          claimed_by?: string | null
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string | null
@@ -229,6 +312,7 @@ export type Database = {
           id?: string
           status?: string
           subject?: string | null
+          thread_id?: string | null
           user_id?: string
         }
         Relationships: []
@@ -287,6 +371,36 @@ export type Database = {
           total_messages?: number
           user_id?: string
           xp?: number
+        }
+        Relationships: []
+      }
+      voice_sessions: {
+        Row: {
+          channel_id: string
+          duration_minutes: number | null
+          guild_id: string
+          id: string
+          join_time: string | null
+          leave_time: string | null
+          user_id: string
+        }
+        Insert: {
+          channel_id: string
+          duration_minutes?: number | null
+          guild_id: string
+          id?: string
+          join_time?: string | null
+          leave_time?: string | null
+          user_id: string
+        }
+        Update: {
+          channel_id?: string
+          duration_minutes?: number | null
+          guild_id?: string
+          id?: string
+          join_time?: string | null
+          leave_time?: string | null
+          user_id?: string
         }
         Relationships: []
       }

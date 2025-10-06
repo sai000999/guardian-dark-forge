@@ -1,36 +1,45 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('shop')
-    .setDescription('View the economy shop'),
+    .setDescription('View the Auron coin shop'),
   
   async execute(interaction, client) {
-    // This is a placeholder shop - customize with your own items!
-    const shopItems = [
-      { name: '🎨 Custom Role Color', price: 1000, description: 'Get a custom colored role' },
-      { name: '📝 Custom Role Name', price: 1500, description: 'Create your own role name' },
-      { name: '⭐ VIP Role', price: 5000, description: 'Get access to VIP channels' },
-      { name: '🎭 Profile Badge', price: 500, description: 'Display a special badge' },
-      { name: '🔊 Voice Channel Priority', price: 2000, description: 'Priority in voice channels' },
-    ];
+    const supabase = client.supabase;
+    const guildId = interaction.guild.id;
     
     const embed = new EmbedBuilder()
-      .setColor(0xDC2626)
-      .setTitle('🏪 Economy Shop')
-      .setDescription('Purchase items with your coins!\n\n*Items coming soon - shop under construction*')
+      .setColor(0x000000)
+      .setTitle('🛍️ Auron Coin Shop')
+      .setDescription('Purchase exclusive perks with your coins!\n\n**Available Items:**')
+      .addFields(
+        { name: '⭐ VIP Role', value: '**5000 coins** • Get exclusive VIP access', inline: false },
+        { name: '🔊 Private VC Access', value: '**8000 coins** • Access to private voice channels', inline: false },
+        { name: '🎨 Role Colors Access', value: '**2000 coins** • Unlock custom role colors', inline: false }
+      )
+      .setFooter({ text: 'Click buttons below to purchase • Auron Economy' })
       .setTimestamp();
     
-    shopItems.forEach((item, index) => {
-      embed.addFields({
-        name: `${index + 1}. ${item.name}`,
-        value: `💰 **${item.price}** coins\n${item.description}`,
-        inline: false
-      });
-    });
+    const shopButtons = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('buy_vip')
+          .setLabel('VIP Role (5000)')
+          .setEmoji('⭐')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('buy_vcaccess')
+          .setLabel('VC Access (8000)')
+          .setEmoji('🔊')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('buy_hexrole')
+          .setLabel('Colors (2000)')
+          .setEmoji('🎨')
+          .setStyle(ButtonStyle.Success)
+      );
     
-    embed.setFooter({ text: 'Use your coins to buy items • More items coming soon!' });
-    
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed], components: [shopButtons] });
   },
 };

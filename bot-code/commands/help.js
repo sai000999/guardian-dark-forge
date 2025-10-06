@@ -7,36 +7,48 @@ module.exports = {
   
   async execute(interaction, client) {
     const embed = new EmbedBuilder()
-      .setColor(0xDC2626)
-      .setTitle('📚 Auron Bot Commands')
-      .setDescription('Here are all available commands:')
+      .setColor(0x000000)
+      .setTitle('🤖 Auron Bot Commands')
+      .setDescription('Professional Discord management with advanced features\n━━━━━━━━━━━━━━━━━━━━━━━━')
       .addFields(
-        { name: '🛡️ Moderation', value: '\u200b', inline: false },
-        { name: '/kick', value: 'Kick a user from the server', inline: true },
-        { name: '/ban', value: 'Ban a user from the server', inline: true },
-        { name: '/timeout', value: 'Temporarily mute a user', inline: true },
-        { name: '/quarantine', value: 'Quarantine users', inline: true },
-        { name: '/blacklist', value: 'Manage blacklisted words', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '🎤 Voice', value: '\u200b', inline: false },
-        { name: '/disconnect', value: 'Disconnect a user from VC', inline: true },
-        { name: '/vc-move', value: 'Move a user to specific VC', inline: true },
-        { name: '/vc-moveall', value: 'Move all users between VCs', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '🎮 Utility', value: '\u200b', inline: false },
-        { name: '/help', value: 'Show this help message', inline: true },
-        { name: '/ticket', value: 'Create or close support tickets', inline: true },
-        { name: '/afk', value: 'Set yourself as AFK', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '⭐ Leveling & Economy', value: '\u200b', inline: false },
-        { name: '/level', value: 'Check your level and XP', inline: true },
-        { name: '/balance', value: 'Check your balance', inline: true },
-        { name: '/daily', value: 'Claim daily reward', inline: true },
-        { name: '/give', value: 'Transfer coins to another user', inline: true },
-        { name: '/shop', value: 'View the economy shop', inline: true }
+        { 
+          name: '🛡️ Moderation Commands', 
+          value: '`/kick <user> [reason]` - Kick a user from server\n`/ban <user> [reason]` - Ban a user permanently\n`/timeout <user> <duration> [reason]` - Temporarily mute user\n`/disconnect <user>` - Disconnect user from voice\n`/quarantine <user> [reason]` - Quarantine a user\n`/blacklist` - Manage blacklisted words', 
+          inline: false 
+        },
+        { 
+          name: '🎤 Voice Management', 
+          value: '`/vc-move <user> <channel>` - Move user to voice channel\n`/vc-moveall <source> <destination>` - Move all users between VCs', 
+          inline: false 
+        },
+        { 
+          name: '🎫 Support Tickets', 
+          value: '`/ticket-setup <channel> <staff-role>` - Configure ticket system\n• Use ticket panel buttons to create/manage tickets\n• Includes claim, close, add/remove member features', 
+          inline: false 
+        },
+        { 
+          name: '💰 Economy System', 
+          value: '`/balance [user]` - Check coin balance\n`/shop` - View and purchase items\n`/daily` - Claim daily reward\n`/give <user> <amount>` - Transfer coins\n\n**Earning:** 5 coins/10 messages • 100 coins/10 min voice', 
+          inline: false 
+        },
+        { 
+          name: '⚙️ Shop Configuration (Admin)', 
+          value: '`/vip-role setup <role>` - Set VIP role (5000 coins)\n`/vcaccess-role setup <role>` - Set VC access role (8000 coins)\n`/hexrole add <role>` - Set color role access (2000 coins)', 
+          inline: false 
+        },
+        { 
+          name: '📊 Leveling & Utility', 
+          value: '`/level [user]` - Check user level and XP\n`/afk [reason]` - Set AFK status', 
+          inline: false 
+        },
+        { 
+          name: '🤖 AI Features', 
+          value: '• **Anti-Spam AutoMod** - Auto-detects spam (5+ msgs/10s)\n• Automatically times out spammers for 10 minutes', 
+          inline: false 
+        }
       )
-      .setTimestamp()
-      .setFooter({ text: 'Auron Bot • Made with ❤️' });
+      .setFooter({ text: 'Auron Bot • Professional Discord Management System' })
+      .setTimestamp();
     
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
