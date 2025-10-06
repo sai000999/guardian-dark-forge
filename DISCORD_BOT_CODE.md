@@ -1,6 +1,18 @@
 # Auron Discord Bot - Complete Implementation
 
-This file contains the complete Discord bot code that connects to your dashboard.
+⚠️ **DEPRECATED**: This file contains the old monolithic bot code.
+
+✅ **USE THE NEW STRUCTURE**: All bot code has been moved to the `bot-code/` folder with proper file organization:
+- `bot-code/bot.js` - Main bot file
+- `bot-code/deploy-commands.js` - Command deployment
+- `bot-code/commands/` - Individual command files
+- `bot-code/README.md` - Setup instructions
+
+Please refer to `bot-code/README.md` for installation and usage instructions.
+
+---
+
+## Old Code (For Reference Only)
 
 ## Prerequisites
 
