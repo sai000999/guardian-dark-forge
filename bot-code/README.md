@@ -79,12 +79,32 @@ npm run dev
 
 ## Commands 📝
 
+### 🛡️ Moderation
 | Command | Description | Permissions |
 |---------|-------------|-------------|
-| `/help` | Show all commands | Everyone |
-| `/blacklist add/remove/list` | Manage blacklisted words | Admin |
+| `/kick <user> [reason]` | Kick a user from the server | Kick Members |
+| `/ban <user> [reason]` | Ban a user from the server | Ban Members |
+| `/timeout <user> <duration> [reason]` | Temporarily mute a user | Moderate Members |
+| `/quarantine add/remove` | Add or remove users from quarantine | Administrator |
+| `/blacklist add/remove/list` | Manage blacklisted words | Administrator |
+
+### 🎤 Voice Management
+| Command | Description | Permissions |
+|---------|-------------|-------------|
+| `/disconnect <user>` | Disconnect a user from voice channel | Move Members |
+| `/vc-move <user> <channel>` | Move a user to specific voice channel | Move Members |
+| `/vc-moveall <source> <dest>` | Move all users between VCs | Move Members |
+
+### 🎮 Utility
+| Command | Description | Permissions |
+|---------|-------------|-------------|
+| `/help` | Show all available commands | Everyone |
 | `/ticket create/close` | Support ticket system | Everyone |
-| `/quarantine add/remove` | Quarantine users | Admin |
+| `/afk [reason]` | Set yourself as AFK | Everyone |
+
+### ⭐ Leveling & Economy
+| Command | Description | Permissions |
+|---------|-------------|-------------|
 | `/level [user]` | Check level and XP | Everyone |
 | `/balance [user]` | Check coin balance | Everyone |
 | `/daily` | Claim daily reward | Everyone |
@@ -103,9 +123,16 @@ bot-code/
 ├── README.md            # This file
 └── commands/            # Command files
     ├── help.js
+    ├── kick.js
+    ├── ban.js
+    ├── timeout.js
+    ├── disconnect.js
+    ├── vc-move.js
+    ├── vc-moveall.js
     ├── blacklist.js
     ├── ticket.js
     ├── quarantine.js
+    ├── afk.js
     ├── level.js
     ├── balance.js
     ├── daily.js

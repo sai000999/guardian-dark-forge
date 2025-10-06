@@ -78,12 +78,63 @@ client.once('ready', async () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   
+  // AFK System
+  await handleAFK(message);
+  
   // XP System
   await handleXP(message);
   
   // Check blacklist
   await checkBlacklist(message);
 });
+
+async function handleAFK(message) {
+  try {
+    // Check if user is AFK
+    const { data: afkData, error: afkError } = await supabase
+      .from('afk_status')
+      .select('*')
+      .eq('user_id', message.author.id)
+      .eq('guild_id', message.guild.id)
+      .maybeSingle();
+
+    if (afkError) {
+      console.error('Error checking AFK status:', afkError);
+      return;
+    }
+
+    if (afkData) {
+      // Remove AFK status
+      await supabase
+        .from('afk_status')
+        .delete()
+        .eq('user_id', message.author.id)
+        .eq('guild_id', message.guild.id);
+
+      await message.reply(`Welcome back ${message.author}! Your AFK status has been removed.`);
+    }
+
+    // Check if mentioned users are AFK
+    for (const user of message.mentions.users.values()) {
+      const { data: mentionedAfk } = await supabase
+        .from('afk_status')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('guild_id', message.guild.id)
+        .maybeSingle();
+
+      if (mentionedAfk) {
+        const afkTime = new Date(mentionedAfk.set_at);
+        const now = new Date();
+        const timeDiff = Math.floor((now - afkTime) / 1000 / 60); // minutes
+        
+        await message.reply(`💤 ${user.tag} is currently AFK: ${mentionedAfk.reason} (${timeDiff} minutes ago)`);
+      }
+    }
+  } catch (error) {
+    console.error('Error handling AFK:', error);
+  }
+}
 
 async function handleXP(message) {
   const userId = message.author.id;

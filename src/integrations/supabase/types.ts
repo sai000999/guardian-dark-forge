@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      afk_status: {
+        Row: {
+          guild_id: string
+          id: string
+          reason: string | null
+          set_at: string
+          user_id: string
+        }
+        Insert: {
+          guild_id: string
+          id?: string
+          reason?: string | null
+          set_at?: string
+          user_id: string
+        }
+        Update: {
+          guild_id?: string
+          id?: string
+          reason?: string | null
+          set_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       blacklist_words: {
         Row: {
           added_by: string
