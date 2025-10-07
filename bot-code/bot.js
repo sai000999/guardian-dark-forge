@@ -517,10 +517,671 @@ async function checkMonitoredChannels(client) {
   }
 }
 
+// ==================== WELCOMER SYSTEM ====================
+
+// Decancer function: removes weird characters from usernames
+function decancerUsername(username) {
+  const cleaned = username.replace(/[^\x20-\x7E]/g, '').replace(/[^a-zA-Z0-9_\s]/g, '');
+  return cleaned.trim() || 'User';
+}
+
+// Handle new member join
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const { data: settings } = await supabase
+      .from('welcomer_settings')
+      .select('*')
+      .eq('guild_id', member.guild.id)
+      .maybeSingle();
+
+    if (!settings) return;
+
+    // Auto Decancer
+    if (settings.auto_decancer && /[^\x20-\x7E]/.test(member.user.username)) {
+      const newNickname = decancerUsername(member.user.username);
+      try {
+        await member.setNickname(newNickname);
+        console.log(`🔧 Auto-decancered: ${member.user.username} → ${newNickname}`);
+      } catch (error) {
+        console.error('Error setting nickname:', error);
+      }
+    }
+
+    // Assign Join Role
+    if (settings.join_role_id) {
+      try {
+        const role = member.guild.roles.cache.get(settings.join_role_id);
+        if (role) {
+          await member.roles.add(role);
+          console.log(`✅ Assigned role ${role.name} to ${member.user.tag}`);
+        }
+      } catch (error) {
+        console.error('Error assigning role:', error);
+      }
+    }
+
+    // Send Welcome Message in Channel
+    if (settings.channel_id) {
+      const channel = member.guild.channels.cache.get(settings.channel_id);
+      if (channel) {
+        const messageContent = settings.message?.replace(/{user}/g, `<@${member.id}>`).replace(/{server}/g, member.guild.name);
+        
+        if (settings.embed_json) {
+          const embedData = settings.embed_json;
+          const embed = new EmbedBuilder()
+            .setColor(embedData.color ? parseInt(embedData.color.replace('#', ''), 16) : 0x2B2D31)
+            .setTimestamp();
+
+          if (embedData.title) embed.setTitle(embedData.title.replace(/{user}/g, member.user.username).replace(/{server}/g, member.guild.name));
+          if (embedData.description) embed.setDescription(embedData.description.replace(/{user}/g, `<@${member.id}>`).replace(/{server}/g, member.guild.name));
+          if (embedData.image?.url) embed.setImage(embedData.image.url);
+          if (embedData.thumbnail?.url) embed.setThumbnail(embedData.thumbnail.url);
+          embed.setFooter({ text: 'Welcome to the server!' });
+
+          await channel.send({ content: messageContent || null, embeds: [embed] });
+        } else if (messageContent) {
+          await channel.send(messageContent);
+        }
+      }
+    }
+
+    // Send DM Message
+    if (settings.dm_message || settings.dm_embed_json) {
+      try {
+        const dmContent = settings.dm_message?.replace(/{user}/g, member.user.username).replace(/{server}/g, member.guild.name);
+        
+        if (settings.dm_embed_json) {
+          const embedData = settings.dm_embed_json;
+          const embed = new EmbedBuilder()
+            .setColor(embedData.color ? parseInt(embedData.color.replace('#', ''), 16) : 0x2B2D31)
+            .setTimestamp();
+
+          if (embedData.title) embed.setTitle(embedData.title.replace(/{user}/g, member.user.username).replace(/{server}/g, member.guild.name));
+          if (embedData.description) embed.setDescription(embedData.description.replace(/{user}/g, member.user.username).replace(/{server}/g, member.guild.name));
+          if (embedData.image?.url) embed.setImage(embedData.image.url);
+          if (embedData.thumbnail?.url) embed.setThumbnail(embedData.thumbnail.url);
+          embed.setFooter({ text: `Welcome to ${member.guild.name}` });
+
+          await member.send({ content: dmContent || null, embeds: [embed] });
+        } else if (dmContent) {
+          await member.send(dmContent);
+        }
+      } catch (error) {
+        console.error('Error sending DM:', error);
+      }
+    }
+
+  } catch (error) {
+    console.error('Error in guildMemberAdd:', error);
+  }
+});
+
+// ==================== LOGGING SYSTEM ====================
+
+async function getLoggingConfig(guildId) {
+  const { data } = await supabase
+    .from('logging_config')
+    .select('*')
+    .eq('guild_id', guildId)
+    .maybeSingle();
+  return data;
+}
+
+// Log member join/leave
+client.on('guildMemberAdd', async (member) => {
+  const config = await getLoggingConfig(member.guild.id);
+  if (!config?.server_logs_channel_id) return;
+
+  const channel = member.guild.channels.cache.get(config.server_logs_channel_id);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xF9D342)
+    .setTitle('📥 Member Joined')
+    .setThumbnail(member.user.displayAvatarURL())
+    .addFields(
+      { name: 'User', value: `${member.user.tag} (${member.id})`, inline: true },
+      { name: 'Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+});
+
+client.on('guildMemberRemove', async (member) => {
+  const config = await getLoggingConfig(member.guild.id);
+  if (!config?.server_logs_channel_id) return;
+
+  const channel = member.guild.channels.cache.get(config.server_logs_channel_id);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xFF4B4B)
+    .setTitle('📤 Member Left')
+    .setThumbnail(member.user.displayAvatarURL())
+    .addFields(
+      { name: 'User', value: `${member.user.tag} (${member.id})`, inline: true },
+      { name: 'Joined', value: member.joinedAt ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown', inline: true }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+});
+
+// Log message delete
+client.on('messageDelete', async (message) => {
+  if (!message.guild || message.author?.bot) return;
+
+  const config = await getLoggingConfig(message.guild.id);
+  if (!config?.msg_logs_channel_id) return;
+
+  const channel = message.guild.channels.cache.get(config.msg_logs_channel_id);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xFF4B4B)
+    .setTitle('🗑️ Message Deleted')
+    .addFields(
+      { name: 'Author', value: message.author ? `${message.author.tag} (${message.author.id})` : 'Unknown', inline: true },
+      { name: 'Channel', value: `${message.channel}`, inline: true },
+      { name: 'Content', value: message.content || '*[No text content]*', inline: false }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  if (message.attachments.size > 0) {
+    embed.addFields({ name: 'Attachments', value: message.attachments.map(a => a.url).join('\n') });
+  }
+
+  await channel.send({ embeds: [embed] });
+});
+
+// Log message edit
+client.on('messageUpdate', async (oldMessage, newMessage) => {
+  if (!newMessage.guild || newMessage.author?.bot) return;
+  if (oldMessage.content === newMessage.content) return;
+
+  const config = await getLoggingConfig(newMessage.guild.id);
+  if (!config?.msg_logs_channel_id) return;
+
+  const channel = newMessage.guild.channels.cache.get(config.msg_logs_channel_id);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xF9D342)
+    .setTitle('✏️ Message Edited')
+    .addFields(
+      { name: 'Author', value: `${newMessage.author.tag} (${newMessage.author.id})`, inline: true },
+      { name: 'Channel', value: `${newMessage.channel}`, inline: true },
+      { name: 'Before', value: oldMessage.content?.substring(0, 1024) || '*[No content]*', inline: false },
+      { name: 'After', value: newMessage.content?.substring(0, 1024) || '*[No content]*', inline: false },
+      { name: 'Jump to Message', value: `[Click here](${newMessage.url})`, inline: false }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+});
+
+// Log role create/delete
+client.on('roleCreate', async (role) => {
+  const config = await getLoggingConfig(role.guild.id);
+  if (!config?.server_logs_channel_id) return;
+
+  const channel = role.guild.channels.cache.get(config.server_logs_channel_id);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xF9D342)
+    .setTitle('➕ Role Created')
+    .addFields(
+      { name: 'Role', value: `${role.name} (${role.id})`, inline: true },
+      { name: 'Color', value: role.hexColor, inline: true }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+});
+
+client.on('roleDelete', async (role) => {
+  const config = await getLoggingConfig(role.guild.id);
+  if (!config?.server_logs_channel_id) return;
+
+  const channel = role.guild.channels.cache.get(config.server_logs_channel_id);
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xFF4B4B)
+    .setTitle('➖ Role Deleted')
+    .addFields(
+      { name: 'Role', value: `${role.name} (${role.id})`, inline: true }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+});
+
+// Log channel create/delete
+client.on('channelCreate', async (channel) => {
+  if (!channel.guild) return;
+
+  const config = await getLoggingConfig(channel.guild.id);
+  if (!config?.server_logs_channel_id) return;
+
+  const logChannel = channel.guild.channels.cache.get(config.server_logs_channel_id);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xF9D342)
+    .setTitle('➕ Channel Created')
+    .addFields(
+      { name: 'Channel', value: `${channel.name} (${channel.id})`, inline: true },
+      { name: 'Type', value: channel.type.toString(), inline: true }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await logChannel.send({ embeds: [embed] });
+});
+
+client.on('channelDelete', async (channel) => {
+  if (!channel.guild) return;
+
+  const config = await getLoggingConfig(channel.guild.id);
+  if (!config?.server_logs_channel_id) return;
+
+  const logChannel = channel.guild.channels.cache.get(config.server_logs_channel_id);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xFF4B4B)
+    .setTitle('➖ Channel Deleted')
+    .addFields(
+      { name: 'Channel', value: `${channel.name} (${channel.id})`, inline: true },
+      { name: 'Type', value: channel.type.toString(), inline: true }
+    )
+    .setFooter({ text: 'Auron Logs' })
+    .setTimestamp();
+
+  await logChannel.send({ embeds: [embed] });
+});
+
 // ==================== BUTTON & INTERACTION HANDLER ====================
 
 client.on('interactionCreate', async (interaction) => {
   const supabase = client.supabase;
+  
+  // ==================== WELCOMER BUTTON INTERACTIONS ====================
+  
+  if (interaction.isButton()) {
+    const welcomeModule = require('./commands/welcome');
+    
+    // Main menu buttons
+    if (interaction.customId === 'welcome_change_role') {
+      const roleModal = new ModalBuilder()
+        .setCustomId('modal_welcome_role')
+        .setTitle('Set Join Role');
+
+      const roleInput = new TextInputBuilder()
+        .setCustomId('role_id')
+        .setLabel('Role ID or Name')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('Enter role ID or @mention the role');
+
+      roleModal.addComponents(new ActionRowBuilder().addComponents(roleInput));
+      return interaction.showModal(roleModal);
+    }
+
+    if (interaction.customId === 'welcome_change_channel') {
+      const channelModal = new ModalBuilder()
+        .setCustomId('modal_welcome_channel')
+        .setTitle('Set Welcome Channel');
+
+      const channelInput = new TextInputBuilder()
+        .setCustomId('channel_id')
+        .setLabel('Channel ID or Name')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('Enter channel ID or #mention the channel');
+
+      channelModal.addComponents(new ActionRowBuilder().addComponents(channelInput));
+      return interaction.showModal(channelModal);
+    }
+
+    if (interaction.customId === 'welcome_change_message') {
+      const messageModal = new ModalBuilder()
+        .setCustomId('modal_welcome_message')
+        .setTitle('Set Welcome Message');
+
+      const messageInput = new TextInputBuilder()
+        .setCustomId('message_text')
+        .setLabel('Welcome Message')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setPlaceholder('Use {user} for mention, {server} for server name');
+
+      messageModal.addComponents(new ActionRowBuilder().addComponents(messageInput));
+      return interaction.showModal(messageModal);
+    }
+
+    if (interaction.customId === 'welcome_change_embed') {
+      return welcomeModule.showEmbedEditor(interaction, true);
+    }
+
+    if (interaction.customId === 'welcome_change_dm_message') {
+      const dmModal = new ModalBuilder()
+        .setCustomId('modal_welcome_dm_message')
+        .setTitle('Set DM Message');
+
+      const dmInput = new TextInputBuilder()
+        .setCustomId('dm_message_text')
+        .setLabel('DM Message')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setPlaceholder('Use {user} for username, {server} for server name');
+
+      dmModal.addComponents(new ActionRowBuilder().addComponents(dmInput));
+      return interaction.showModal(dmModal);
+    }
+
+    if (interaction.customId === 'welcome_change_dm_embed') {
+      return welcomeModule.showEmbedEditor(interaction, false);
+    }
+
+    if (interaction.customId === 'welcome_toggle_decancer') {
+      const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+      const newValue = !settings.auto_decancer;
+
+      await supabase
+        .from('welcomer_settings')
+        .upsert({
+          guild_id: interaction.guildId,
+          auto_decancer: newValue
+        }, { onConflict: 'guild_id' });
+
+      settings.auto_decancer = newValue;
+      return welcomeModule.showMainMenu(interaction, settings);
+    }
+
+    if (interaction.customId === 'welcome_remove_embed') {
+      await supabase
+        .from('welcomer_settings')
+        .update({ embed_json: null })
+        .eq('guild_id', interaction.guildId);
+
+      const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+      return welcomeModule.showMainMenu(interaction, settings);
+    }
+
+    if (interaction.customId === 'welcome_remove_dm_embed') {
+      await supabase
+        .from('welcomer_settings')
+        .update({ dm_embed_json: null })
+        .eq('guild_id', interaction.guildId);
+
+      const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+      return welcomeModule.showMainMenu(interaction, settings);
+    }
+
+    if (interaction.customId === 'welcome_test') {
+      const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+      
+      if (!settings.channel_id && !settings.dm_message && !settings.dm_embed_json) {
+        return interaction.reply({ content: '⚠️ Please configure at least a channel or DM message first.', ephemeral: true });
+      }
+
+      // Simulate a test welcome
+      const testEmbed = new EmbedBuilder()
+        .setColor(0xF9D342)
+        .setTitle('🧪 Test Mode')
+        .setDescription('This is a preview of your welcome message.')
+        .setFooter({ text: 'Auron Welcomer • Test' })
+        .setTimestamp();
+
+      if (settings.embed_json) {
+        const embedData = settings.embed_json;
+        const previewEmbed = new EmbedBuilder()
+          .setColor(embedData.color ? parseInt(embedData.color.replace('#', ''), 16) : 0x2B2D31);
+
+        if (embedData.title) previewEmbed.setTitle(embedData.title.replace(/{user}/g, interaction.user.username).replace(/{server}/g, interaction.guild.name));
+        if (embedData.description) previewEmbed.setDescription(embedData.description.replace(/{user}/g, `<@${interaction.user.id}>`).replace(/{server}/g, interaction.guild.name));
+        if (embedData.image?.url) previewEmbed.setImage(embedData.image.url);
+        if (embedData.thumbnail?.url) previewEmbed.setThumbnail(embedData.thumbnail.url);
+        
+        return interaction.reply({ embeds: [testEmbed, previewEmbed], ephemeral: true });
+      }
+
+      return interaction.reply({ embeds: [testEmbed], ephemeral: true });
+    }
+
+    if (interaction.customId === 'welcome_exit') {
+      return interaction.update({ content: '✅ Welcomer configuration closed.', embeds: [], components: [] });
+    }
+
+    // Embed editor buttons
+    if (interaction.customId.startsWith('embed_')) {
+      const isMainEmbed = interaction.customId.endsWith('_main');
+      
+      if (interaction.customId.startsWith('embed_title_')) {
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_embed_title_${isMainEmbed ? 'main' : 'dm'}`)
+          .setTitle('Set Embed Title');
+
+        const titleInput = new TextInputBuilder()
+          .setCustomId('embed_title')
+          .setLabel('Title')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('Enter embed title');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(titleInput));
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith('embed_description_')) {
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_embed_description_${isMainEmbed ? 'main' : 'dm'}`)
+          .setTitle('Set Embed Description');
+
+        const descInput = new TextInputBuilder()
+          .setCustomId('embed_description')
+          .setLabel('Description')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setPlaceholder('Enter embed description');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(descInput));
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith('embed_color_')) {
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_embed_color_${isMainEmbed ? 'main' : 'dm'}`)
+          .setTitle('Set Embed Color');
+
+        const colorInput = new TextInputBuilder()
+          .setCustomId('embed_color')
+          .setLabel('Hex Color (e.g., #2B2D31)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('#2B2D31');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(colorInput));
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith('embed_image_')) {
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_embed_image_${isMainEmbed ? 'main' : 'dm'}`)
+          .setTitle('Set Embed Image');
+
+        const imageInput = new TextInputBuilder()
+          .setCustomId('embed_image')
+          .setLabel('Image URL')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('https://example.com/image.png');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(imageInput));
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith('embed_thumbnail_')) {
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_embed_thumbnail_${isMainEmbed ? 'main' : 'dm'}`)
+          .setTitle('Set Embed Thumbnail');
+
+        const thumbnailInput = new TextInputBuilder()
+          .setCustomId('embed_thumbnail')
+          .setLabel('Thumbnail URL')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('https://example.com/thumbnail.png');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(thumbnailInput));
+        return interaction.showModal(modal);
+      }
+
+      if (interaction.customId.startsWith('embed_preview_')) {
+        const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+        const embedData = isMainEmbed ? settings.embed_json : settings.dm_embed_json;
+
+        if (!embedData) {
+          return interaction.reply({ content: '⚠️ No embed data to preview.', ephemeral: true });
+        }
+
+        return interaction.reply({
+          content: '```json\n' + JSON.stringify(embedData, null, 2) + '\n```',
+          ephemeral: true
+        });
+      }
+
+      if (interaction.customId.startsWith('embed_save_')) {
+        await interaction.reply({ content: '✅ Embed saved successfully!', ephemeral: true });
+        setTimeout(() => interaction.deleteReply(), 2000);
+        return;
+      }
+
+      if (interaction.customId === 'embed_back') {
+        const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+        return welcomeModule.showMainMenu(interaction, settings);
+      }
+    }
+  }
+
+  // ==================== WELCOMER MODAL SUBMISSIONS ====================
+  
+  if (interaction.isModalSubmit()) {
+    const welcomeModule = require('./commands/welcome');
+
+    if (interaction.customId === 'modal_welcome_role') {
+      const roleInput = interaction.fields.getTextInputValue('role_id');
+      const role = interaction.guild.roles.cache.find(r => r.id === roleInput || r.name === roleInput);
+
+      if (!role) {
+        return interaction.reply({ content: '❌ Role not found.', ephemeral: true });
+      }
+
+      await supabase
+        .from('welcomer_settings')
+        .upsert({
+          guild_id: interaction.guildId,
+          join_role_id: role.id
+        }, { onConflict: 'guild_id' });
+
+      await interaction.reply({ content: `✅ Join role set to ${role.name}`, ephemeral: true });
+      setTimeout(() => interaction.deleteReply(), 2000);
+      return;
+    }
+
+    if (interaction.customId === 'modal_welcome_channel') {
+      const channelInput = interaction.fields.getTextInputValue('channel_id');
+      const channel = interaction.guild.channels.cache.find(c => c.id === channelInput || c.name === channelInput);
+
+      if (!channel) {
+        return interaction.reply({ content: '❌ Channel not found.', ephemeral: true });
+      }
+
+      await supabase
+        .from('welcomer_settings')
+        .upsert({
+          guild_id: interaction.guildId,
+          channel_id: channel.id
+        }, { onConflict: 'guild_id' });
+
+      await interaction.reply({ content: `✅ Welcome channel set to ${channel.name}`, ephemeral: true });
+      setTimeout(() => interaction.deleteReply(), 2000);
+      return;
+    }
+
+    if (interaction.customId === 'modal_welcome_message') {
+      const message = interaction.fields.getTextInputValue('message_text');
+
+      await supabase
+        .from('welcomer_settings')
+        .upsert({
+          guild_id: interaction.guildId,
+          message: message
+        }, { onConflict: 'guild_id' });
+
+      await interaction.reply({ content: '✅ Welcome message updated!', ephemeral: true });
+      setTimeout(() => interaction.deleteReply(), 2000);
+      return;
+    }
+
+    if (interaction.customId === 'modal_welcome_dm_message') {
+      const dmMessage = interaction.fields.getTextInputValue('dm_message_text');
+
+      await supabase
+        .from('welcomer_settings')
+        .upsert({
+          guild_id: interaction.guildId,
+          dm_message: dmMessage
+        }, { onConflict: 'guild_id' });
+
+      await interaction.reply({ content: '✅ DM message updated!', ephemeral: true });
+      setTimeout(() => interaction.deleteReply(), 2000);
+      return;
+    }
+
+    // Embed customization modals
+    if (interaction.customId.startsWith('modal_embed_')) {
+      const isMainEmbed = interaction.customId.endsWith('_main');
+      const settings = await welcomeModule.getWelcomerSettings(interaction.guildId);
+      const embedData = isMainEmbed ? (settings.embed_json || {}) : (settings.dm_embed_json || {});
+
+      if (interaction.customId.includes('_title_')) {
+        embedData.title = interaction.fields.getTextInputValue('embed_title');
+      } else if (interaction.customId.includes('_description_')) {
+        embedData.description = interaction.fields.getTextInputValue('embed_description');
+      } else if (interaction.customId.includes('_color_')) {
+        embedData.color = interaction.fields.getTextInputValue('embed_color');
+      } else if (interaction.customId.includes('_image_')) {
+        embedData.image = { url: interaction.fields.getTextInputValue('embed_image') };
+      } else if (interaction.customId.includes('_thumbnail_')) {
+        embedData.thumbnail = { url: interaction.fields.getTextInputValue('embed_thumbnail') };
+      }
+
+      const updateField = isMainEmbed ? 'embed_json' : 'dm_embed_json';
+      await supabase
+        .from('welcomer_settings')
+        .upsert({
+          guild_id: interaction.guildId,
+          [updateField]: embedData
+        }, { onConflict: 'guild_id' });
+
+      await interaction.reply({ content: '✅ Embed updated!', ephemeral: true });
+      setTimeout(() => interaction.deleteReply(), 2000);
+      return;
+    }
+  }
+  
+  // ==================== EXISTING SLASH COMMAND HANDLER ====================
   
   // Handle slash commands
   if (interaction.isCommand()) {

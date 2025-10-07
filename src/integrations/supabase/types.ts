@@ -140,6 +140,36 @@ export type Database = {
         }
         Relationships: []
       }
+      logging_config: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          guild_id: string
+          id: string
+          mod_logs_channel_id: string | null
+          msg_logs_channel_id: string | null
+          server_logs_channel_id: string | null
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          guild_id: string
+          id?: string
+          mod_logs_channel_id?: string | null
+          msg_logs_channel_id?: string | null
+          server_logs_channel_id?: string | null
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          guild_id?: string
+          id?: string
+          mod_logs_channel_id?: string | null
+          msg_logs_channel_id?: string | null
+          server_logs_channel_id?: string | null
+        }
+        Relationships: []
+      }
       message_tracking: {
         Row: {
           guild_id: string
@@ -440,6 +470,48 @@ export type Database = {
           join_time?: string | null
           leave_time?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      welcomer_settings: {
+        Row: {
+          auto_decancer: boolean
+          channel_id: string | null
+          created_at: string
+          dm_embed_json: Json | null
+          dm_message: string | null
+          embed_json: Json | null
+          guild_id: string
+          id: string
+          join_role_id: string | null
+          message: string | null
+          updated_at: string
+        }
+        Insert: {
+          auto_decancer?: boolean
+          channel_id?: string | null
+          created_at?: string
+          dm_embed_json?: Json | null
+          dm_message?: string | null
+          embed_json?: Json | null
+          guild_id: string
+          id?: string
+          join_role_id?: string | null
+          message?: string | null
+          updated_at?: string
+        }
+        Update: {
+          auto_decancer?: boolean
+          channel_id?: string | null
+          created_at?: string
+          dm_embed_json?: Json | null
+          dm_message?: string | null
+          embed_json?: Json | null
+          guild_id?: string
+          id?: string
+          join_role_id?: string | null
+          message?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
